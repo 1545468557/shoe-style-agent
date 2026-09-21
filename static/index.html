@@ -1,0 +1,187 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>款式工场 · 鞋服智能设计</title>
+<style>
+*{box-sizing:border-box}
+:root{--paper:#faf8f5;--ink:#171717;--ink2:#5f5a53;--line:#e3ded6;--card:#fff;--accent:#0f6f63;--gold:#b08d4f;--deep:#1d2b28}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.85 -apple-system,"PingFang SC",Inter,sans-serif}
+.wrap{max-width:1220px;margin:0 auto;padding:0 24px 70px}
+header{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;padding:24px 0 13px;border-bottom:1px solid var(--ink)}
+.logo{font:600 23px/1.2 "Songti SC",serif;letter-spacing:2px}
+.logo small{display:block;font:400 11px/1.6 inherit;color:var(--ink2);letter-spacing:3px}
+header nav{margin-left:auto;display:flex;gap:20px;font-size:14px;color:var(--ink2)}
+header nav b{color:var(--ink);font-weight:500;border-bottom:2px solid var(--accent);padding-bottom:2px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 0;font-size:12.5px}
+.pill{padding:4px 11px;border:1px solid var(--gold);background:#fffdf7;color:#7a5a12}
+.pill.ok{border-color:#bfe0d8;background:#eef7f5;color:var(--accent)}
+h1{font:600 31px/1.3 "Songti SC",serif;letter-spacing:1px;margin:22px 0 8px}
+h2{font:600 19px/1.4 "Songti SC",serif;margin:0 0 5px}
+h3{font:600 16px/1.5 "Songti SC",serif;margin:0 0 4px}
+.lead{color:var(--ink2);font-size:15px;max-width:64ch;margin:0 0 18px}
+.label{font:500 11px/1 inherit;letter-spacing:3px;color:var(--gold);margin-bottom:10px}
+.hint{font-size:12.5px;color:var(--ink2)}.tiny{font-size:12px;color:#8b867e}
+.n{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.works{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:22px}
+.work{cursor:pointer}.work .thumb{position:relative;aspect-ratio:3/4;overflow:hidden;background:#eeebe5}
+.work img{width:100%;height:100%;object-fit:cover;transition:transform .5s}.work:hover img{transform:scale(1.04)}
+.state{position:absolute;left:0;bottom:0;background:var(--deep);color:#fff;font-size:11px;letter-spacing:1px;padding:6px 11px}
+.newbox{aspect-ratio:3/4;display:grid;place-items:center;border:1px dashed var(--line);background:#fff}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:22px}
+figure{margin:0}.pic{aspect-ratio:3/4;overflow:hidden;background:#eeebe5;cursor:zoom-in}
+figure img{width:100%;height:100%;object-fit:cover;transition:transform .5s}figure:hover img{transform:scale(1.03)}
+figcaption{display:flex;justify-content:space-between;padding-top:9px;font-size:12px;color:#8b867e}
+.btn{font:500 14px/1 inherit;padding:11px 18px;border:1px solid var(--ink);background:transparent;cursor:pointer}
+.btn:hover{background:var(--ink);color:#fff}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.sm{padding:8px 13px;font-size:13px}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.card{background:#fff;border:1px solid var(--line);padding:18px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(270px,1fr);gap:26px;align-items:start}
+.side{border-left:1px solid var(--line);padding-left:20px}
+.spec{display:grid;grid-template-columns:auto auto;gap:7px 14px;align-items:baseline;font-size:14px}
+.spec .v{text-align:right;font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.v.changed{background:#fdf3e4;color:#7a5a12;padding:0 4px;font-weight:600}
+input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--line);font:15px ui-monospace,Menlo,monospace;text-align:right}
+textarea{width:100%;border:1px solid var(--ink);background:#fff;padding:15px;font:16px/1.9 inherit}
+.deep{background:var(--deep);color:#f3efe8;padding:18px 20px;margin-top:12px}
+.deep .label{color:#c8b184}.deep .sum{display:flex;justify-content:space-between;padding-top:10px;font:600 19px/1.4 "Songti SC",serif}
+.overlay{position:fixed;inset:0;background:rgba(20,26,24,.93);display:none;z-index:50;overflow:auto;padding:26px}
+.overlay.on{display:block}.overlay .close{position:absolute;right:20px;top:16px;background:transparent;border:1px solid #fff;color:#fff;padding:8px 14px;cursor:pointer}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:1080px;margin:36px auto 0}
+.cmp img{width:100%;display:block}
+#log{list-style:none;margin:0;padding:0;font-size:12.5px;color:var(--ink2);display:grid;gap:5px;max-height:260px;overflow:auto}
+.err{color:#a4372a}
+@media(max-width:900px){h1{font-size:25px}.wrap{padding:0 16px 60px}.grid2{grid-template-columns:minmax(0,1fr)}.side{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:16px}.cmp{grid-template-columns:1fr}header nav{display:none}}
+</style></head><body><div class="wrap">
+<header>
+  <div class="logo">款式工场<small>SHOE &amp; APPAREL DESIGN AGENT</small></div>
+  <nav><b>我的设计</b><a href="/docs" target="_blank">接口文档</a></nav>
+</header>
+<div class="bar">
+  <span class="pill">示例数据 · 仿真实例</span>
+  <span class="pill" id="mode">正在检查…</span>
+  <span class="pill ok" id="gatesbar">五道确认：—</span>
+</div>
+<main id="stage"></main>
+<div class="card" style="margin-top:22px"><div class="label">操作记录</div><ol id="log"></ol></div>
+</div>
+<div class="overlay" id="view"><button class="close" onclick="hide()">关闭</button><div id="view-in"></div></div>
+<script>
+const S={pid:null,project:null,gates:{},brief:null,materials:null,patterns:null,dirs:[],bom:null};
+const $=id=>document.getElementById(id);
+const log=(t,bad)=>{const li=document.createElement('li');if(bad)li.className='err';li.textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false})+' '+t;$('log').prepend(li);};
+async function api(p,o){const r=await fetch('/api'+p,{headers:{'content-type':'application/json'},...o});const b=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(b?.error?.message||('HTTP '+r.status));return b;}
+const post=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b??{})});
+const n=w=>Number(w).toFixed(1);
+function hide(){$('view').classList.remove('on');}
+$('view').onclick=e=>{if(e.target.id==='view')hide();};
+function zoom(url){$('view-in').innerHTML='<div style="max-width:880px;margin:36px auto 0"><img src="'+url+'" style="width:100%"><p style="color:#fff;font-size:13px;margin-top:12px">AI 生成示意图（非实物照片）· 点空白处关闭</p></div>';$('view').classList.add('on');}
+function compare(){const on=[...document.querySelectorAll('.pickbox:checked')];
+  if(on.length!==2){alert('请勾选两个方向再来对比');return;}
+  $('view-in').innerHTML='<div class="cmp">'+on.map(c=>{const f=c.closest('figure');return '<div><img src="'+f.querySelector('img').src+'"><p style="color:#fff;font-size:13px;margin-top:10px">'+f.querySelector('h2').textContent+'</p></div>';}).join('')+'</div>';
+  $('view').classList.add('on');}
+async function refresh(){ if(S.pid){ const st=await api('/project/'+S.pid+'/state'); S.gates=st.gates; S.brief=st.brief; S.project=st.project; }
+  const g=S.gates; $('gatesbar').textContent='五道确认：'+['brief','direction','material','pattern','sampling'].map(k=>g[k]?'✓':'—').join(' ');
+  render(); }
+function render(){ const st=$('stage'), g=S.gates, pid=S.pid;
+  if(!pid){ st.innerHTML='<h1>我的设计</h1><p class="lead">每一份企划就是一个方案。先新建一个，写清楚你要做什么样的衣服。</p>'+
+    '<div class="works"><div class="newbox"><div style="text-align:center"><div style="font:600 30px/1 Georgia,serif">＋</div><p class="hint">新建方案</p>'+
+    '<button class="btn primary sm" id="mk">开始</button></div></div></div>'; $('mk').onclick=async()=>{const p=await post('/project',{name:'新方案 '+(Object.keys(S).length)});S.pid=p.id;log('新建方案 #'+p.id);await refresh();}; return; }
+  let h='';
+  if(!g.brief){ h+='<h1>说说你要做什么样的衣服</h1><p class="lead">用平常的话写就行；系统看完会告诉你它理解到什么，缺的信息会写成「未提供」。</p>'+
+    '<textarea id="brief" rows="4">夏天海边度假连衣裙，预算 300 元以内，要显瘦、好打理，卖给年轻女性</textarea>'+
+    '<div style="margin-top:14px"><button class="btn" id="parse">解析企划</button></div>';
+    if(S.brief){const p=S.brief.parsed||{};h+='<div class="card" style="margin-top:14px"><div class="label">我理解到的</div><div class="spec">'+
+      '<span>品类</span><span class="v">'+(p.category||'未提供')+'</span><span>风格</span><span class="v">'+((p.style_keywords||[]).join('、')||'未提供')+'</span>'+
+      '<span>人群</span><span class="v">'+(p.target_user||'未提供')+'</span><span>预算</span><span class="v">'+((p.price_band||p.cost_ceiling)||'未提供')+'</span></div>'+
+      '<p class="hint" style="margin-top:10px">'+(p.missing&&p.missing.length?('你没说：'+p.missing.join('、')):'企划要素齐全')+'</p>'+
+      '<div style="margin-top:14px"><button class="btn primary" id="g1">确认，开始出效果图</button></div></div>'; }
+  } else if(!g.direction){
+    h+='<h1>三个方向，挑一个</h1><p class="lead">勾两个可以并排对比；点图可以看细节。挑中之后才进入面料与版型。</p>'+
+      '<div style="margin-bottom:12px"><button class="btn" id="gen">生成 3 个方向</button> <button class="btn" onclick="compare()">并排对比（勾两个）</button></div><div class="cards" id="cards"></div>'
+      +'<p class="tiny" style="margin-top:12px">图为 AI 生成示意图（非实物照片）；数据为示例数据。</p>';
+  } else if(!g.material){ h+='<div class="grid2"><div><div class="label">面料 · 示例数据</div><div id="mats"></div></div>'+
+      '<aside class="side"><div class="label">提示</div><p class="hint">面料来自示例库；接入企业物料库后自动替换。</p><div id="patsoon"></div></aside></div>';
+  } else if(!g.pattern){ h+='<h1>定版型与工艺</h1><div id="pats"></div>'; }
+  else { h+='<h1>用料与尺寸</h1><div id="result"></div>'; }
+  st.innerHTML=h;
+  if(!g.brief){ $('parse')&&($('parse').onclick=async()=>{try{const r=await post('/project/'+pid+'/brief',{text:$('brief').value});log('解析完成（'+r.provider+'）');await refresh();}catch(e){log('解析失败：'+e.message,true);}});
+    $('g1')&&($('g1').onclick=async()=>{try{await post('/project/'+pid+'/gate/brief');log('企划已确认');await refresh();}catch(e){log('确认失败：'+e.message,true);}}); }
+  else if(!g.direction){ if(S.dirs.length)renderDirs();
+    $('gen')&&($('gen').onclick=async()=>{try{$('gen').disabled=true;$('gen').textContent='正在生成…（约 30 秒/张）';const r=await post('/project/'+pid+'/directions');S.dirs=r.items;log('出图完成：'+r.items.length+' 个方向'+(r.items[0]?.is_placeholder?'（占位图）':'（真实出图）'));render();}catch(e){log('出图失败：'+e.message,true);$('gen').disabled=false;$('gen').textContent='生成 3 个方向';}}); }
+  else if(!g.material){ loadMaterials(); }
+  else if(!g.pattern){ loadPatterns(); }
+  else { loadResult(); }
+}
+function renderDirs(){ const box=$('cards'); if(!box)return;
+  box.innerHTML=S.dirs.map(d=>`<figure><div class="pic" onclick="zoom('${d.image_url}')"><img src="${d.image_url}" alt=""></div>
+    <figcaption><span>DIRECTION 0${d.seq}</span><span>${d.is_placeholder?'占位图':'AI 生成示意图'}</span></figcaption>
+    <h2 style="margin-top:8px">${d.name}</h2><p class="hint">${d.inspiration||''}</p>
+    <div style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button class="btn sm primary" data-pick="${d.id}">就用这个方向</button>
+      <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" class="pickbox">加入对比</label></div></figure>`).join('');
+  box.querySelectorAll('[data-pick]').forEach(b=>b.onclick=async()=>{try{await post('/project/'+S.pid+'/gate/direction',{direction_id:Number(b.dataset.pick)});log('已选方向 #'+b.dataset.pick);await refresh();}catch(e){log('选择失败：'+e.message,true);}});
+}
+async function loadMaterials(){ const box=$('mats'); if(!box)return;
+  const did=(S.dirs.find(d=>true)||{}).id; if(!did){box.innerHTML='<p class="hint">请先选方向</p>';return;}
+  try{ const r=await api('/project/'+S.pid+'/materials?direction_id='+did); S.materials=r.items;
+    box.innerHTML=r.items.map(m=>`<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline">
+      <h3>${m.name}</h3><span class="tiny n">${m.price_yuan_per_m[0]}~${m.price_yuan_per_m[1]} 元/米</span></div>
+      <div class="spec" style="margin-top:8px"><span>成分</span><span class="v">${m.fiber}</span><span>克重</span><span class="v">${m.weight_gsm} g/m²</span>
+      <span>手感</span><span class="v">${(m.hand||[]).join('、')}</span><span>适合</span><span class="v">${(m.season||[]).join('/')}</span></div>
+      <div style="margin-top:12px"><button class="btn sm" data-mat="${m.id}">用这个</button></div></div>`).join('')+
+      '<p class="tiny">以上为示例数据（仿真实例）。</p><div style="margin-top:14px"><button class="btn primary" id="g3">面料就它，下一步</button></div>';
+    box.querySelectorAll('[data-mat]').forEach(b=>b.onclick=async()=>{try{await post('/project/'+S.pid+'/material',{direction_id:did,material_id:b.dataset.mat});log('已选面料 '+b.dataset.mat+'（待确认）');}catch(e){log('选面料失败：'+e.message,true);}});
+    $('g3').onclick=async()=>{try{await post('/project/'+S.pid+'/gate/material');log('面料已确认');await refresh();}catch(e){log('确认失败：'+e.message,true);}};
+  }catch(e){box.innerHTML='<p class="err">'+e.message+'</p>';}
+}
+async function loadPatterns(){ const box=$('pats'); if(!box)return;
+  try{ const r=await api('/project/'+S.pid+'/patterns'); S.patterns=r;
+    box.innerHTML='<div class="label">版型（示例数据）</div><div style="display:grid;gap:10px">'+
+      r.items.map(p=>`<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><h3>${p.name}</h3><span class="tiny">难度 ${p.difficulty} · 腰围松量 ${p.waist_ease_cm}cm</span></div>
+      <p class="hint">${(p.tags||[]).join(' · ')}　可选裙长 ${(p.length_options_cm||[]).join(' / ')} cm</p>
+      <div style="margin-top:10px"><button class="btn sm" data-pat="${p.id}">选这个版型</button></div></div>`).join('')+'</div>'+
+      '<div class="label" style="margin-top:18px">工艺（可多选）</div><div style="display:flex;flex-wrap:wrap;gap:12px">'+
+      r.crafts.map(c=>`<label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" class="craft" value="${c.id}">${c.name}</label>`).join('')+'</div>'+
+      '<div style="margin-top:16px"><button class="btn primary" id="g4">版型定好了，下一步</button></div>';
+    let picked=null;
+    box.querySelectorAll('[data-pat]').forEach(b=>b.onclick=async()=>{picked=b.dataset.pat;const crafts=[...box.querySelectorAll('.craft:checked')].map(i=>i.value);
+      try{await post('/project/'+S.pid+'/pattern',{pattern_id:picked,crafts});log('已选版型 '+picked+'（工艺 '+crafts.length+' 道）');}catch(e){log('选版型失败：'+e.message,true);}});
+    $('g4').onclick=async()=>{try{await post('/project/'+S.pid+'/gate/pattern');log('版型已确认');await refresh();}catch(e){log('确认失败：'+e.message,true);}};
+  }catch(e){box.innerHTML='<p class="err">'+e.message+'</p>';}
+}
+async function loadResult(){ const box=$('result'); if(!box)return;
+  try{ const r=await post('/project/'+S.pid+'/bom'); S.bom=r;
+    const items=r.bom.items; const spec=r.size_spec;
+    box.innerHTML='<div class="grid2"><div><div class="label">用料清单</div><div class="card" style="padding:0"><div style="padding:14px 18px">'+
+      items.map(i=>`<div class="spec" style="grid-template-columns:1fr auto;margin-bottom:7px"><span>${i.kind}｜${i.name}</span><span class="v">${i.qty} · ${i.subtotal[0]}~${i.subtotal[1]} 元</span></div>`).join('')+
+      '</div><div class="deep"><div class="label">成本估算</div><div class="sum"><span>合计</span><span class="n">'+r.bom.estimated_cost_yuan[0]+' ~ '+r.bom.estimated_cost_yuan[1]+' 元</span></div>'+
+      '<p class="hint" style="color:#cfd6d2;margin:8px 0 0">'+r.bom.note.replace(/\*\*/g,'')+'</p></div></div>'+
+      '<div class="label" style="margin-top:20px">尺寸表（'+spec.system+'）</div><div class="spec"><span>胸围</span><span class="v">'+spec.bust+'</span>'+
+      '<span>腰围</span><span class="v">'+spec.waist+'</span><span>臀围</span><span class="v">'+spec.hip+'</span><span>裙长</span><span class="v">'+spec.skirt_length+'</span>'+
+      '<span>袖长</span><span class="v">'+spec.sleeve_length+'</span></div><p class="tiny">已改版 '+spec.iterations+' 次</p></div>'+
+      '<aside class="side"><div class="label">导出</div><div style="display:grid;gap:10px">'+
+      '<button class="btn primary" id="ex">导出设计方案（Word）+ 用料（Excel）</button>'+
+      '<button class="btn" id="samp">生成打样单并审批</button></div><div id="exout" style="margin-top:12px"></div>'+
+      '<div class="label" style="margin-top:20px">改版型（尺寸会跟着变）</div>'+
+      '<div class="spec" style="grid-template-columns:auto auto"><span>裙长</span><span><input type="number" id="dl" value="10"> cm</span>'+
+      '<span>腰围松量</span><span><input type="number" id="dw" value="-2"> cm</span></div>'+
+      '<div style="margin-top:10px"><button class="btn sm" id="iter">记为新版</button></div>'+
+      '<div class="label" style="margin-top:22px">改版记录</div><div id="iterhist"></div></aside></div>';
+    try{ const st=await api('/project/'+S.pid+'/state'); const rows=st.iterations||[];
+      $('iterhist').innerHTML = rows.length ? rows.map(r=>'<div class="spec" style="grid-template-columns:auto 1fr"><span>第 '+r.no+' 版</span><span class="v">'+Object.entries(r.changes||{}).map(([k,v])=>{const m={skirt_length_cm:'裙长',waist_ease_cm:'腰围松量',hip_ease_cm:'臀围松量',sleeve_length_cm:'袖长'};return (m[k]||k)+' '+(v>0?'+':'')+v+'cm';}).join('、')+'</span></div>').join('') 
+        : '<p class="hint">还没改过版。改上面的参数并点「记为新版」。</p>';
+    }catch(e){ $('iterhist').innerHTML='<p class="hint">读改版记录失败</p>'; }
+    $('iter').onclick=async()=>{try{const res=await post('/project/'+S.pid+'/iterate',{changes:{skirt_length_cm:Number($('dl').value),waist_ease_cm:Number($('dw').value)}});
+      log('第 '+res.iteration_no+' 版：'+res.effects.join('；'));await loadResult();}catch(e){log('改版失败：'+e.message,true);}};
+    $('ex').onclick=async()=>{try{const res=await post('/project/'+S.pid+'/export');
+      $('exout').innerHTML='<p class="hint">已生成：<a href="'+res.download.word+'">Word 方案</a> · <a href="'+res.download.excel+'">Excel 用料与尺寸</a></p>';log('导出完成');}catch(e){log('导出失败：'+e.message,true);}};
+    $('samp').onclick=async()=>{try{await post('/project/'+S.pid+'/sampling');await post('/project/'+S.pid+'/sampling/advance',{to_state:'approved'});
+      log('打样单已生成并审批（演示流程）');await refresh();}catch(e){log('打样失败：'+e.message,true);}};
+  }catch(e){box.innerHTML='<p class="err">'+e.message+'</p>';}
+}
+(async()=>{ try{const h=await api('/health');
+    $('mode').textContent='模型：'+h.model_provider+' · 出图：'+h.image_provider;
+    log('后端就绪（示例库 '+JSON.stringify(h.library)+'）'); }catch(e){$('mode').textContent='后端未就绪';}
+  await refresh(); })();
+</script></body></html>

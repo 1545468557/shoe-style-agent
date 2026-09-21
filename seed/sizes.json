@@ -1,0 +1,42 @@
+[
+  {
+    "id": "S001",
+    "system": "国标女装 160/84A",
+    "bust": 84,
+    "waist": 66,
+    "hip": 90,
+    "shoulder": 39,
+    "back_length": 38,
+    "sleeve": 56
+  },
+  {
+    "id": "S002",
+    "system": "国标女装 165/88A",
+    "bust": 88,
+    "waist": 70,
+    "hip": 94,
+    "shoulder": 40,
+    "back_length": 39,
+    "sleeve": 57
+  },
+  {
+    "id": "S003",
+    "system": "国标女装 170/92A",
+    "bust": 92,
+    "waist": 74,
+    "hip": 98,
+    "shoulder": 41,
+    "back_length": 40,
+    "sleeve": 58
+  },
+  {
+    "id": "S004",
+    "system": "品牌自有 M 码",
+    "bust": 88,
+    "waist": 70,
+    "hip": 94,
+    "shoulder": 39.5,
+    "back_length": 39,
+    "sleeve": 57
+  }
+]
