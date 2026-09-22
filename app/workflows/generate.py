@@ -11,6 +11,7 @@ import time
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from ..category import is_shoe
 from ..gates import require_for_materials, require_for_pattern
 from ..models import (
     Brief,
@@ -19,6 +20,8 @@ from ..models import (
     MaterialSuggestion,
     PatternPick,
     StyleDirection,
+    TrimPick,
+    TrimSuggestion,
 )
 
 MATERIAL_SYSTEM = (
@@ -39,6 +42,132 @@ CRAFT_SYSTEM = (
     "羽绒服给「防钻绒缝合/分格充绒/压胶」这类；裙装才用「隐形拉链/里衬/鱼骨」；"
     "② how 写做法要点；③ why 写为什么这个款需要它；④ difficulty 只能是 低/中/高；⑤ 不得出现品牌名。"
 )
+
+
+TRIM_SYSTEM = (
+    "你是资深服装/鞋类开发跟单（辅料与配件）。请依据【品类、风格方向、价格带、已选面料】"
+    '给出 3–5 条**该品类**需要的辅料，只输出 JSON：'
+    '{"items":[{"name":"","spec":"","use":"","unit":"","price":[0,0],"why":""}]}。'
+    "规则：① **严格按品类**——鞋/靴/凉鞋/拖鞋只能给鞋类辅件（内里、鞋垫、鞋带/魔术贴、中底、大底、"
+    "鞋口包边、五金扣件、防滑贴等）；服装才能给里布、拉链、细扣、粘合衬、松紧、织带、鱼骨；"
+    "**鞋类不得出现细扣/鱼骨/隐形拉链等服装辅料，服装不得出现大底/鞋垫等鞋材**；"
+    "② unit 写计价单位（元/双、元/米、元/条、元/个）；③ price 给合理的估算单价区间（不是采购报价）；"
+    "④ use 一句话说用在哪里；⑤ why 一句话说为什么这个款需要它；⑥ 不得出现品牌名或商标。"
+)
+
+
+def _mock_trims(category: str) -> list[dict]:
+    """离线兜底：**按品类**给辅料，鞋类不会拿到女装辅料。"""
+    if is_shoe(category):
+        return [
+            {"name": "鞋用内里", "spec": "猪皮/网布内里", "use": "贴脚内里", "unit": "元/双",
+             "price": [6, 12], "why": "鞋需要贴脚、吸湿的内里（离线兜底）"},
+            {"name": "成型鞋垫", "spec": "EVA 成型鞋垫", "use": "缓震与脚感", "unit": "元/双",
+             "price": [3, 6], "why": "提升脚感与缓震（离线兜底）"},
+            {"name": "橡胶大底", "spec": "耐磨防滑纹路", "use": "外底", "unit": "元/双",
+             "price": [12, 22], "why": "通勤需要耐磨防滑（离线兜底）"},
+            {"name": "中底/成型衬", "spec": "成型中底", "use": "支撑与定型", "unit": "元/双",
+             "price": [5, 9], "why": "决定鞋型轮廓与安定性（离线兜底）"},
+        ]
+    return [
+        {"name": "里布", "spec": "涤纶/醋酸里布", "use": "里衬防透", "unit": "元/米",
+         "price": [6, 14], "why": "防透光、提升穿着感（离线兜底）"},
+        {"name": "拉链", "spec": "3号尼龙/金属拉链", "use": "侧缝/后背", "unit": "元/条",
+         "price": [1.5, 6], "why": "穿脱方便且不破坏线条（离线兜底）"},
+        {"name": "粘合衬", "spec": "无纺粘合衬", "use": "门襟/领口定型", "unit": "元/米",
+         "price": [2, 5], "why": "领口/门襟需要挺度（离线兜底）"},
+        {"name": "缝纫线/包边带", "spec": "同色缝纫线", "use": "合缝与包边", "unit": "元/件",
+         "price": [1, 3], "why": "收口与配色完整度（离线兜底）"},
+    ]
+
+
+def generate_trims(session: Session, project_id: int) -> tuple[list[dict], str]:
+    """AI 生成 3–5 条**按品类**的辅料建议（非真实采购数据）。"""
+    from ..config import get_config
+    from ..llm import LlmError, complete_json
+    from ..schemas import TrimGenSet
+
+    require_for_materials(session, project_id)            # 门 1、2、3
+    brief = session.scalar(select(Brief).where(Brief.project_id == project_id))
+    category = ((brief.parsed if brief else {}) or {}).get("category") or "女装"
+    material = session.scalar(select(MaterialPick).where(MaterialPick.project_id == project_id))
+    if get_config().is_mock_model:
+        items, provider = _mock_trims(category), "tag-fallback"
+    else:
+        direction = session.get(StyleDirection, material.direction_id) if material else None
+        user = (
+            f"{_brief_ctx(session, project_id, direction)}\n"
+            f"已选面料：{material.note if material else '未提供'}\n"
+            f"品类判定：{'鞋类' if is_shoe(str(category)) else '服装类'}（请严格按此给辅料）"
+        )
+        try:
+            out, provider = complete_json(TRIM_SYSTEM, user, TrimGenSet)
+            items = [t.model_dump() for t in out.items]
+            if not items:
+                raise ValueError("模型没给出辅料建议")
+        except (LlmError, ValueError):
+            items, provider = _mock_trims(category), "tag-fallback"
+
+    # 模型偶尔跨品类（给凉鞋配细扣）→ 用品类关键词做一次清洗与兜底；顺手清掉品牌名
+    items = [_strip_brands(i) for i in items if _trim_allowed(i, str(category))] or _mock_trims(category)
+
+    session.execute(delete(TrimSuggestion).where(TrimSuggestion.project_id == project_id))
+    session.commit()
+    numbered: list[dict] = []
+    for idx, item in enumerate(items[:5], start=1):
+        session.add(TrimSuggestion(project_id=project_id, seq=idx, payload=item, provider=provider,
+                                   created_at=time.strftime("%Y-%m-%d %H:%M:%S")))
+        numbered.append(dict(item, seq=idx))
+    session.commit()
+    return numbered, provider
+
+
+#: 跨品类关键词：鞋类不得出现这些；服装不得出现鞋材词
+_CLOTHING_ONLY = ("细扣", "鱼骨", "隐形拉链", "门襟", "腰头", "里布")
+_SHOE_ONLY = ("大底", "鞋垫", "中底", "跖围", "鞋面", "跟太", "鞋带", "魔术贴")
+
+#: 品牌名不入交付物（模型偶尔会写"YKK 或同等级"）→ 统一改成"同等级配件"
+_BRANDS = ("YKK", "ykk", "3M", "Gore-Tex", "gore-tex", "施华洛世奇", "杜邦")
+
+
+def _strip_brands(item: dict) -> dict:
+    cleaned = {}
+    for key, value in item.items():
+        if isinstance(value, str):
+            for brand in _BRANDS:
+                value = value.replace(brand, "同等级配件")
+        cleaned[key] = value
+    return cleaned
+
+
+def _trim_allowed(item: dict, category: str) -> bool:
+    name = f"{item.get('name', '')}{item.get('spec', '')}{item.get('use', '')}"
+    if is_shoe(category):
+        return not any(word in name for word in _CLOTHING_ONLY)
+    return not any(word in name for word in _SHOE_ONLY)
+
+
+def accept_trims(session: Session, project_id: int, seqs: list[int]) -> dict:
+    """采纳 AI 辅料建议（按序号）；采纳后 BOM 用这份，未采纳时用按品类的内置兜底。"""
+    require_for_materials(session, project_id)
+    rows = session.scalars(
+        select(TrimSuggestion).where(TrimSuggestion.project_id == project_id).order_by(TrimSuggestion.seq)
+    ).all()
+    if not rows:
+        raise ValueError("还没有 AI 辅料建议，请先点「AI 生成辅料建议」")
+    wanted = set(seqs) if seqs else {r.seq for r in rows}
+    items = [dict(r.payload, seq=r.seq) for r in rows if r.seq in wanted]
+    if not items:
+        raise ValueError("没有勾选任何辅料")
+    row = session.scalar(select(TrimPick).where(TrimPick.project_id == project_id))
+    if row is None:
+        row = TrimPick(project_id=project_id)
+        session.add(row)
+    row.payload = {"items": items}
+    row.note = f"已采纳 {len(items)} 条 AI 辅料建议（非采购数据，价格为估算）"
+    row.created_at = time.strftime("%Y-%m-%d %H:%M:%S")
+    session.commit()
+    return {"items": items, "note": row.note}
 
 
 def _brief_ctx(session: Session, project_id: int, direction: StyleDirection | None) -> str:

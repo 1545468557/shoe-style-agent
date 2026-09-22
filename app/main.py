@@ -323,7 +323,9 @@ def read_materials_ai(project_id: int) -> Any:
 
     with session() as s:
         rows = s.scalars(
-            select(MaterialSuggestion).where(MaterialSuggestion.project_id == project_id).order_by(MaterialSuggestion.seq)
+            select(MaterialSuggestion)
+            .where(MaterialSuggestion.project_id == project_id)
+            .order_by(MaterialSuggestion.seq)
         ).all()
         return {
             "items": [dict(r.payload, seq=r.seq) for r in rows],
@@ -374,6 +376,70 @@ def accept_crafts_ai(project_id: int, payload: CraftAcceptIn) -> Any:
             from .workflows.generate import accept_crafts
 
             return accept_crafts(s, project_id, payload.names)
+    except (GateError, LibraryError, ValueError) as exc:
+        return _fail(getattr(exc, "code", "invalid_request"), str(exc), 409)
+
+
+class TrimAcceptIn(BaseModel):
+    """采纳 AI 辅料建议（按序号）。"""
+
+    seqs: list[int] = []
+
+
+@app.post("/api/project/{project_id}/trims/generate")
+def make_trims_ai(project_id: int) -> Any:
+    """AI 生成 3–5 条**按品类**的辅料建议（**非真实采购数据，价格为估算**）。"""
+    try:
+        with session() as s:
+            from .workflows.generate import generate_trims
+
+            items, provider = generate_trims(s, project_id)
+            return {
+                "items": items,
+                "provider": provider,
+                "is_ai_generated": True,
+                "note": "AI 生成的辅料建议（非真实采购数据，价格为估算值）"
+                if provider != "tag-fallback"
+                else "模型未成功，已回退为按品类的内置辅料兜底（离线）",
+            }
+    except (GateError, ValueError) as exc:
+        return _fail(getattr(exc, "code", "invalid_request"), str(exc), 409)
+    except LlmError as exc:
+        return _fail(exc.code, exc.message, 502)
+
+
+@app.get("/api/project/{project_id}/trims/generate")
+def read_trims_ai(project_id: int) -> Any:
+    """读取已生成的 AI 辅料建议（零费用，刷新回显）。"""
+    from sqlalchemy import select as _select
+
+    from .models import TrimPick, TrimSuggestion
+
+    with session() as s:
+        rows = s.scalars(
+            _select(TrimSuggestion)
+            .where(TrimSuggestion.project_id == project_id)
+            .order_by(TrimSuggestion.seq)
+        ).all()
+        pick = s.scalar(_select(TrimPick).where(TrimPick.project_id == project_id))
+        accepted = [i.get("seq") for i in ((pick.payload or {}).get("items") or [])] if pick else []
+        return {
+            "items": [dict(r.payload, seq=r.seq) for r in rows],
+            "accepted": accepted,
+            "provider": rows[0].provider if rows else None,
+            "is_ai_generated": True,
+            "note": "AI 生成的辅料建议（非真实采购数据，价格为估算值）",
+        }
+
+
+@app.post("/api/project/{project_id}/trims/accept")
+def accept_trims_ai(project_id: int, payload: TrimAcceptIn) -> Any:
+    """采纳 AI 辅料建议（按序号列表）。"""
+    try:
+        with session() as s:
+            from .workflows.generate import accept_trims
+
+            return accept_trims(s, project_id, payload.seqs)
     except (GateError, LibraryError, ValueError) as exc:
         return _fail(getattr(exc, "code", "invalid_request"), str(exc), 409)
 

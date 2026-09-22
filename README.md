@@ -1,62 +1,92 @@
-# 款式工场 · 鞋服智能设计 Agent
+# 鞋服智能设计 Agent（款式工场）
 
-一个**服装/鞋类设计 agent**：把一段大白话企划，变成一份**能打样、能落地**的设计方案。
+鞋服设计师用的 AI 设计工作台：**企划 → 3 个风格方向（真实 AI 出图）→ 选 1（人工确认）→ 面料搭配 → 版型与工艺 → 用料与尺寸 → 打样单审批 → 导出 Word/Excel**。
+五道人工确认由**后端代码强制**，绕过前端直调接口同样被拒（HTTP 409）。
 
-```
-企划 → 4 个风格方向（AI 出图）→ 选一个（人工确认）
-     → 面料方案（AI 生成）→ 版型设计参数（AI 生成）→ 工艺建议（AI 生成）
-     → 用料与成本（代码估算）→ 尺寸表（按品类）→ 导出 Word/Excel → 打样单与审批
-```
+> 对外口径（务必遵守）：**示例数据/仿真实例**、**AI 生成示意图（非实物照片）**、**面料/辅料/工艺均为 AI 生成建议（非真实物料、非采购报价、非工厂工价）**、成本为**估算值**、打样为**演示流程**（未对接真实工厂/PLM）。
 
-## 特点
+> **按品类一致**（2026-09-22 起）：鞋类只输出「鞋码（＝脚长）/ 跖围 /（靴类才有）筒高」，**不得出现腰围/裙长**；服装输出「胸围/腰围/臀围/衣长（裙装=裙长、裤装=裤长）/袖长」。品类判定统一走 `app/category.py`。
 
-| 特性 | 说明 |
-| --- | --- |
-| **按品类生成** | 输入连衣裙 / 羽绒服 / 长筒靴 / T恤衫…，面料、版型、工艺、尺寸表**都按品类给**（鞋给鞋材与鞋码，衣给面料与胸腰围） |
-| **五道人工确认（代码强制）** | 企划 / 方向 / 面料 / 版型 / 打样。未确认直接调接口 → **HTTP 409**，绕过前端也拒 |
-| **企划可人工修改** | AI 理解错了能当场改；**确认后锁定**，要改必须显式「重新编辑」 |
-| **出图质量可打分** | 每张方向图可打 1–3 分，分数入库，用于持续校准 |
-| **历史记录** | 「我的设计」列出所有做过内容的方案，可「继续做」（不重新出图、不花钱） |
-
-## 快速开始
+## 一、启动
 
 ```bash
-cd projects/鞋服agent开发文档      # 本仓库内的路径
-python -m venv .venv && .venv/bin/pip install -e .   # 或 uv sync
-.venv/bin/python scripts/set_model_key.py   # 文本模型 Key（默认 DeepSeek）
-.venv/bin/python scripts/set_image_key.py   # 出图 Key（默认火山方舟）
-.venv/bin/python -m uvicorn app.main:app --port 8020
-cd frontend && npm install && npm run build && npx next start -p 5180
+cd projects/鞋服agent开发文档
+
+# 后端（8020）
+.venv/bin/python -m uvicorn app.main:app --port 8020        # 真实出图
+IMAGE_PROVIDER=placeholder .venv/bin/python -m uvicorn app.main:app --port 8020   # 不出图、零成本
+
+# 前端（5180，另开一个终端）
+cd frontend && npm install && npm run dev
 ```
 
-- 后端：<http://127.0.0.1:8020>（自带验收页）
-- 前端：<http://localhost:5180>
+打开 **http://localhost:5180/**（正式前端）或 **http://127.0.0.1:8020/**（后端自带验收页）。
 
-**不想花钱跑出图**：启动时加 `IMAGE_PROVIDER=placeholder`（本地生成占位图，界面会明确标注）。
+## 二、密钥（只写进 .env，绝不进对话/仓库/日志）
 
-## 口径与边界（请务必遵守）
-
-- 本仓库内的面料/辅料/版型/工艺/尺码示例为 **示例数据 · 仿真实例**，不是真实企业物料库
-- 效果图是 **AI 生成示意图（非实物照片）**，模特为虚构
-- 成本为 **估算值**，正式核价须由采购确认；生成的面料/工艺为 **AI 建议（非真实物料、非工厂工价）**
-- 版型输出的是 **设计参数与结构说明**，不是工厂纸样 / CAD / DXF 文件
-- 打样为 **演示流程**，未对接真实工厂 / PLM（接口位已预留）
-- 密钥只放在本地 `.env`（已在 `.gitignore` 内），**不进仓库、不进前端产物**
-
-## 技术栈
-
-FastAPI + SQLAlchemy（SQLite）+ Pydantic · Next.js 15 + React 19 + TypeScript · 文本模型 DeepSeek · 出图 火山方舟 doubao-seedream（2K）
-
-## 目录
-
-```
-app/          后端：main.py 路由 / gates.py 五道确认门 / workflows/ 各流程 / export.py 导出 / imagegen.py 出图
-frontend/     正式前端（Next.js）：app/page.tsx 工作台、lib/api.ts 客户端
-seed/         示例库（仿真实例）：面料/辅料/版型/工艺/尺码
-tests/        后端测试（离线可跑，不花模型钱）
-docs/         阶段文档、证据包、项目状态、PRD
+```bash
+.venv/bin/python scripts/set_model_key.py   # 文本模型（默认 DeepSeek：https://api.deepseek.com / deepseek-chat）
+.venv/bin/python scripts/set_image_key.py   # 出图（火山方舟：doubao-seedream-5-0-lite，IMAGE_SIZE=2K）
 ```
 
-## 许可证
+`.env` 已被 `.gitignore` 覆盖（`chmod 600`）。**注意**：出图尺寸小于 2K（约 368 万像素）会被服务端拒绝。
 
-MIT，见 [LICENSE](LICENSE)。
+## 三、验证（照着点）
+
+1. 首页 → 在输入框写一段企划（默认已填示例）→ 点「解析企划」→ 看"我理解到的"四项 + "你没说"清单
+2. 点「确认，开始出效果图」→ 顶部第一道确认变 ✓（**未解析就点会被拒**，这就是代码强制的确认门）
+3. 点「生成 3 个方向」→ 出 3 张 3:4 真图（约 30 秒/张）→ 点图放大 / 勾两张「加入对比」
+4. 点「就用这个方向」→ 进入面料：点「让模型挑面料并说明理由」→ 看模型的**搭配理由** → 「用这个」→「面料就它，下一步」
+5. 版型页：点「看推荐版型」→「选这个版型」→ 勾工艺 →「版型定好了，下一步」
+6. 「用料与尺寸」→ 先点 **「AI 生成辅料建议」**（约 ¥0.01）→ 勾选后点「采纳选中」→ 再点「算用料与尺寸」→ 看用料清单（**版型行不计入成本**）、成本估算块、**尺寸表（部位与档位按品类给）** → 「导出 Word 与 Excel」→ 下载
+   > 不生成辅料也能算料：会用**按品类的内置兜底**（鞋类→内里/鞋垫/大底；服装→里布/拉链/衬布），不会给凉鞋配鱼骨/细扣。
+7. 「生成打样单并审批」→ 门状态"打样"变 ✓
+
+> 换个品类试试：企划里分别写「凉鞋」「长筒靴」「牛仔裤」各跑一遍，尺寸表部位应与品类对得上（凉鞋无筒高、裤子显示「裤长」）。
+
+## 四、自检
+
+```bash
+.venv/bin/python -m pytest tests -q   # 33 passed（注意：直接用 pytest 命令会报 No module named 'app'）
+.venv/bin/ruff check app tests        # All checks passed
+cd frontend && npx tsc --noEmit      # 前端类型检查
+cd frontend && npm test               # 3 passed（vitest）
+cd frontend && npm run build          # 生产构建
+```
+
+按品类一致性的回归测试在 `tests/test_category_consistency.py`（凉鞋/靴/连衣裙/牛仔裤 + 辅料清洗 + 导出不报错）。
+
+## 五、目录
+
+```
+app/            后端（FastAPI）：main.py 路由、category.py 品类判定、gates.py 五道确认门、workflows/ 流程、export.py 导出、imagegen.py 出图
+frontend/       正式前端（Next.js，5180）：app/page.tsx 工作台、lib/api.ts 接口客户端、public/looks.html 六风格样板
+seed/           示例库（仿真实例）：面料 40 / 辅料 6 / 版型 8 / 工艺 12 / 尺码 4（**不再参与生成**，只作素材库参考）
+tests/          mock 自动化测试
+scripts/        seed.py 灌示例库、set_model_key.py / set_image_key.py 写密钥
+static/         后端自带验收页
+```
+
+主要接口（阶段 3 第 6 子阶段新增）：
+
+| 接口 | 说明 |
+| --- | --- |
+| `POST /api/project/{id}/trims/generate` | AI 生成 3–5 条**本品类**辅料建议（约 ¥0.01） |
+| `GET /api/project/{id}/trims/generate` | 读取已生成辅料建议（零费用，刷新回显） |
+| `POST /api/project/{id}/trims/accept` | 采纳选中的辅料（`{"seqs":[1,2]}`） |
+| `POST /api/project/{id}/bom` | 用料与尺寸：`size_spec.rows`（按品类的部位）+ `size_spec.tiers`（档位）+ `bom.trims_source`（辅料来源） |
+
+## 六、已知坑
+
+- 出图尺寸必须 ≥2K，`IMAGE_SIZE=1024*1024` 会 400。
+- Next 的 `rewrites` 代理在本组合下不生效 → 用浏览器直连 + 后端 CORS（只放行本机端口）。
+- 改完后端代码**必须重启 8020**（未开 --reload）；前端在生产模式（`next start`）下改了代码要**重新 `npm run build` 再重启**。
+- 新增数据表（`trim_suggestion` / `trim_pick`）由启动时的 `init_db()`（`create_all`）自动建，不需手动迁移。
+
+## 七、一键启动（产品经理自用）
+
+桌面双击 **`启动鞋服.command`**：自动起后端（8020）+ 前端（5180，**生产模式**）+ 打开浏览器，就绪后会打印 `就绪 ✅`。
+关掉服务：双击 **`停止鞋服.command`**。
+
+> 为什么用生产模式：开发模式偶发"JS 加载不到 → 按钮全死"，生产模式不会有这个问题。
+> 若前端页面异常：先双击「停止」，再双击「启动」；仍异常看 `/tmp/shoe-next.log`。

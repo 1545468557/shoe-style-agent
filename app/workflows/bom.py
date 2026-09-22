@@ -14,9 +14,11 @@ import time
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..category import is_boot, is_shoe
 from ..gates import confirm, require_for_export, require_for_sampling
 from ..library import LibraryError, all_of, find
 from ..models import (
+    Brief,
     MaterialPick,
     PatternDesign,
     PatternIteration,
@@ -24,7 +26,18 @@ from ..models import (
     Project,
     Sampling,
     StyleDirection,
+    TrimPick,
 )
+
+#: 长度部位的叫法：裙装→裙长；裤装→裤长；其余→衣长（不把"裙长"硬塞给裤子/上衣）
+_LENGTH_LABEL = (("裙", "裙长"), ("裤", "裤长"))
+
+
+def length_label(category_text: str) -> str:
+    for word, label in _LENGTH_LABEL:
+        if word in category_text:
+            return label
+    return "衣长"
 
 #: 允许迭代的参数及其单位（**白名单**：不认识的参数一律拒绝，避免模型乱改）
 ITERABLE = {
@@ -38,6 +51,71 @@ ITERABLE = {
 def _base_sizes() -> dict:
     """基础尺码（示例库第一条作基准模特，真实库接入后按选码规则替换）。"""
     return all_of("sizes")[0]
+
+
+def _shaft_mm(payload: dict) -> float | None:
+    """靴类筒高（mm）：优先取版型里显式给的值；否则按 length_cm × 10 换算。
+
+    **都没有就不输出这一行**——不拿一个不相干的数字硬填（凉鞋出现"筒高 28mm"就是这么来的）。
+    """
+    explicit = payload.get("shaft_height_mm") or payload.get("筒高")
+    if explicit not in (None, ""):
+        try:
+            return round(float(explicit), 1)
+        except (TypeError, ValueError):
+            return None
+    try:
+        value = float(payload.get("length_cm"))          # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return round(value * 10, 1) if value >= 15 else None   # 小于 15cm 不是筒高，宁可不显示
+
+
+def pattern_line(category_text: str, spec: dict, payload: dict) -> str:
+    """用料清单里"版型"那一行的说明：**按品类**写（鞋类不写"腰围松量"）。"""
+    if is_shoe(category_text):
+        parts = []
+        for row in spec.get("rows", []):
+            if row["key"] == "girth":
+                parts.append(f"跖围 {row['value']}mm")
+            elif row["key"] == "shaft":
+                parts.append(f"筒高 {row['value']}mm")
+        return "｜".join(parts) or "鞋型参数（估算）"
+    ease = payload.get("ease") or {}
+    parts = []
+    for key, label in (("胸围", "胸围松量"), ("腰围", "腰围松量"), ("臀围", "臀围松量")):
+        if ease.get(key) is not None:
+            parts.append(f"{label} {float(ease[key]):g}cm")
+    return "｜".join(parts) or "按基础版型（估算）"
+
+
+def _fallback_trims(category_text: str) -> list[dict]:
+    """按品类的**内置兜底辅料**（不调模型、零费用）：鞋类不会拿到细扣/鱼骨这类女装辅料。"""
+    if is_shoe(category_text):
+        items = [
+            {"id": "XT1", "name": "鞋用内里", "spec": "猪皮/网布内里", "use": "贴脚内里",
+             "unit": "元/双", "price": [6, 12]},
+            {"id": "XT2", "name": "成型鞋垫", "spec": "EVA 成型鞋垫", "use": "缓震与脚感",
+             "unit": "元/双", "price": [3, 6]},
+            {"id": "XT3", "name": "橡胶大底", "spec": "耐磨防滑纹路", "use": "外底",
+             "unit": "元/双", "price": [12, 22]},
+            {"id": "XT4", "name": "中底/成型衬", "spec": "成型中底", "use": "支撑与定型",
+             "unit": "元/双", "price": [5, 9]},
+        ]
+        if is_boot(category_text):
+            items.append({"id": "XT5", "name": "靴筒拉链", "spec": "5号尼龙拉链", "use": "靴筒穿脱",
+                          "unit": "元/双", "price": [3, 6]})
+        return items
+    return [
+        {"id": "XT1", "name": "里布", "spec": "涤纶/醋酸里布", "use": "里衬防透",
+         "unit": "元/米", "price": [6, 14]},
+        {"id": "XT2", "name": "拉链", "spec": "3号尼龙/金属拉链", "use": "侧缝/后背",
+         "unit": "元/条", "price": [1.5, 6]},
+        {"id": "XT3", "name": "粘合衬", "spec": "无纺粘合衬", "use": "门襟/领口定型",
+         "unit": "元/米", "price": [2, 5]},
+        {"id": "XT4", "name": "缝纫线/包边带", "spec": "同色缝纫线", "use": "合缝与包边",
+         "unit": "元/件", "price": [1, 3]},
+    ]
 
 
 def compute_size_spec(session: Session, project_id: int) -> dict:
@@ -75,25 +153,56 @@ def compute_size_spec(session: Session, project_id: int) -> dict:
             delta[key] = delta.get(key, 0) + float(value)
 
     # 鞋类：按鞋码/围度给表；服装：按胸腰臀/长度给表（**都由代码算，估算值**）
-    if any(word in category for word in ("鞋", "靴", "跟", "凉", "拖")):
-        ball = round(float(ease.get("跖围", 220) or 220) + delta.get("waist_ease_cm", 0), 1)
-        shaft = round(float(payload.get("length_cm") or 250) + delta.get("skirt_length_cm", 0), 1)
+    # 品类判定：鞋类给鞋码/跖围（**只有靴类才有筒高**），服装给胸腰臀/长度
+    brief = session.scalar(select(Brief).where(Brief.project_id == project_id))
+    brief_category = str(((brief.parsed if brief else {}) or {}).get("category") or "")
+    category_text = f"{category} {brief_category} {pattern.get('name', '')}"
+
+    if is_shoe(category_text):
+        boot = is_boot(category_text)
+        girth = round(float(ease.get("跖围") or 220) + delta.get("waist_ease_cm", 0), 1)
+        # **只有靴类才有筒高**；凉鞋/拖鞋/单鞋不输出这一行（也不编数字）
+        shaft = _shaft_mm(payload) if boot else None
+        if shaft is not None:
+            shaft = round(shaft + delta.get("skirt_length_cm", 0) * 10, 1)      # 迭代参数单位是 cm
+        base_code = 235
+        tiers = []
+        for code in (225, 230, 235, 240, 245):
+            item = {
+                "size": f"{code}",
+                "鞋码（＝脚长）": code,
+                # 跖围档差：每码（5mm）围度 ±4mm（估算；原先 0.4 系数偏小）
+                "跖围": round(girth + (code - base_code) * 0.8, 1),
+            }
+            if shaft is not None:
+                item["筒高"] = shaft
+            tiers.append(item)
+        rows = [
+            {"key": "shoe_size", "label": "鞋码（＝脚长）", "value": base_code, "unit": "mm"},
+            {"key": "girth", "label": "跖围", "value": girth, "unit": "mm"},
+        ]
+        if shaft is not None:
+            rows.append({"key": "shaft", "label": "筒高", "value": shaft, "unit": "mm"})
         return {
-            "system": "鞋码（基础码 230，档差 5mm）",
+            "system": f"鞋码（基础码 {base_code}，档差 5mm）",
             "unit": "mm",
-            "tiers": [
-                {"size": f"{code}", "脚长": code, "跖围": round(ball + (code - 235) * 0.4, 1), "筒高/鞋帮高": shaft}
-                for code in (225, 230, 235, 240, 245)
-            ],
-            "labels": {"bust": "鞋码", "waist": "脚长", "hip": "跖围", "skirt_length": "筒高/鞋帮高"},
-            "bust": 235,
-            "waist": 235,
-            "hip": round(float(ease.get("跖围", 220) or 220) + delta.get("waist_ease_cm", 0), 1),
-            "skirt_length": round(float(payload.get("length_cm") or 250) + delta.get("skirt_length_cm", 0), 1),
+            "tiers": tiers,
+            "rows": rows,
+            "labels": {
+                "bust": "鞋码（＝脚长）",
+                "waist": "",
+                "hip": "跖围",
+                "skirt_length": "筒高" if shaft is not None else "",
+                "sleeve_length": "",
+            },
+            "bust": base_code,
+            "waist": base_code,
+            "hip": girth,
+            "skirt_length": shaft or 0,
             "sleeve_length": 0,
             "pattern": pattern["name"],
             "iterations": len(iterations),
-            "note": "尺寸由代码按「鞋码 + 版型围度参数 + 迭代改动」计算，**估算值**，打样前请版师复核",
+            "note": "尺寸由代码按「鞋码 + 跖围（估算档差）+ 迭代改动」计算，**估算值**，打样前请版师复核",
         }
 
     if is_ai:
@@ -110,21 +219,32 @@ def compute_size_spec(session: Session, project_id: int) -> dict:
         length = float(pattern["length_options_cm"][-1]) + delta.get("skirt_length_cm", 0)
         sleeve = float(base["sleeve"]) + delta.get("sleeve_length_cm", 0)
         system = base["system"]
-    tiers = []
+    len_label = length_label(category_text)
+    tiers_out = []
     for idx, code in enumerate(("S", "M", "L", "XL")):
         step = idx - 1
-        tiers.append({
+        tiers_out.append({
             "size": code,
             "胸围": round(bust + step * 4, 1),
             "腰围": round(waist + step * 4, 1),
             "臀围": round(hip + step * 4, 1),
-            "衣长/裙长": round(length + step * 2, 1),
+            len_label: round(length + step * 2, 1),
         })
+    rows_out = [
+        {"key": "bust", "label": "胸围", "value": round(bust, 1), "unit": "cm"},
+        {"key": "waist", "label": "腰围", "value": round(waist, 1), "unit": "cm"},
+        {"key": "hip", "label": "臀围", "value": round(hip, 1), "unit": "cm"},
+        {"key": "skirt_length", "label": len_label, "value": round(length, 1), "unit": "cm"},
+    ]
+    if sleeve:
+        rows_out.append({"key": "sleeve_length", "label": "袖长", "value": round(sleeve, 1), "unit": "cm"})
     return {
         "system": system,
         "unit": "cm",
-        "tiers": tiers,
-        "labels": {"bust": "胸围", "waist": "腰围", "hip": "臀围", "skirt_length": "衣长/裙长"},
+        "tiers": tiers_out,
+        "rows": rows_out,
+        "labels": {"bust": "胸围", "waist": "腰围", "hip": "臀围", "skirt_length": len_label,
+                   "sleeve_length": "袖长"},
         "bust": round(bust, 1),
         "waist": round(waist, 1),
         "hip": round(hip, 1),
@@ -159,9 +279,20 @@ def iterate_pattern(session: Session, project_id: int, changes: dict[str, float]
     row.size_spec = after
     session.commit()
 
+    # 迭代提示文案也按品类：鞋类改的是"筒高/跖围"，服装是"裙长/腰围松量"（不把女装叫法套到鞋上）
+    shoe_spec = "鞋码" in str(before.get("system") or "")
+    labels = before.get("labels") or {}
+    label_map = {
+        "skirt_length_cm": "筒高" if shoe_spec else str(labels.get("skirt_length") or "长度"),
+        "waist_ease_cm": "跖围" if shoe_spec else "腰围放松量",
+        "hip_ease_cm": "臀围放松量",
+        "sleeve_length_cm": "袖长",
+    }
+    unit_map = {key: ("mm" if shoe_spec else ITERABLE[key][1]) for key in ("skirt_length_cm", "waist_ease_cm")}
     effects = []
     for key, value in changes.items():
-        label, unit = ITERABLE[key]
+        label = label_map.get(key) or ITERABLE[key][0]
+        unit = unit_map.get(key) or ITERABLE[key][1]
         if key in before and key in after:
             effects.append(f"{label} {value:+g}{unit} → 成品 {after[key]}{unit}（原 {before[key]}{unit}）")
         else:
@@ -173,12 +304,16 @@ def _cost_note(session: Session, project_id: int, low: float, high: float) -> st
     """成本说明：AI 估算；若明显高于企划售价，明确提示不匹配（避免出现"售价 40、成本 120"这种荒唐结果）。"""
     from ..models import Brief
 
-    base = "**估算值**：用量按版型简化估算，价格为 AI 生成的面料估算区间；正式核价请由采购确认"
+    base = "**估算值**：用量按版型简化估算；面料、辅料、工艺价格均为 AI 生成的估算区间；正式核价请由采购确认"
     brief = session.scalar(select(Brief).where(Brief.project_id == project_id))
     band = str(((brief.parsed if brief else {}) or {}).get("price_band") or "")
     nums = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", band)]
     if nums and low > max(nums):
-        return base + f"｜⚠️ 成本估算（{low:.0f}–{high:.0f} 元）**高于企划售价（{band}）**：可能是 AI 面料单价的计价单位（元/米 vs 元/尺或元/双）与实际不符，请核对"
+        return (
+            base
+            + f"｜⚠️ 成本估算（{low:.0f}–{high:.0f} 元）**高于企划售价（{band}）**："
+            + "可能是 AI 给出的计价单位（元/米 vs 元/尺、元/双）与企划价格带有出入，请核对"
+        )
     return base
 
 
@@ -188,6 +323,7 @@ def build_bom(session: Session, project_id: int) -> dict:
     material_pick = session.scalar(select(MaterialPick).where(MaterialPick.project_id == project_id))
     pattern_pick = session.scalar(select(PatternPick).where(PatternPick.project_id == project_id))
     assert material_pick and pattern_pick
+    d: dict = {}                                  # AI 版型的设计参数（示例库版型时为空）
     try:
 
         material = find("materials", material_pick.material_id)
@@ -241,41 +377,64 @@ def build_bom(session: Session, project_id: int) -> dict:
         }
     spec = compute_size_spec(session, project_id)
 
-    # 简化用量估算：裙长 × 幅宽系数（示例算法，标注估算）
-    # 用料：服装按长度估算；**鞋类按每双的鞋面/内里用量估**（不再用"长度×1.6"这套女装算法）
-    if any(w in str(spec.get("system", "")) + str(material.get("name", "")) for w in ("鞋", "靴", "跟", "凉", "拖")):
+    brief_row = session.scalar(select(Brief).where(Brief.project_id == project_id))
+    category_text = (
+        f"{((brief_row.parsed if brief_row else {}) or {}).get('category') or ''} "
+        f"{d.get('category') or ''} {pattern.get('name', '')} {material.get('name', '')}"
+    )
+
+    # 简化用量估算：**鞋类按每双的鞋面/内里用量估**；服装按长度 × 幅宽系数（估算值）
+    if is_shoe(category_text):
         fabric_meters = 0.35
     else:
         fabric_meters = round((float(spec["skirt_length"]) / 100) * 1.6, 2)
     low, high = material["price_yuan_per_m"]
     fabric_cost = (round(low * fabric_meters), round(high * fabric_meters))
 
-    trims = []
+    # 辅料：优先用**已采纳的 AI 辅料建议**；没采纳则用**按品类的内置兜底**（零费用）。
+    # 两者都按品类——不会再出现"凉鞋配鱼骨支撑条/贝壳细扣"。
+    pick_row = session.scalar(select(TrimPick).where(TrimPick.project_id == project_id))
+    if pick_row is not None and (pick_row.payload or {}).get("items"):
+        trims = list(pick_row.payload["items"])
+        trims_source = "AI 生成建议（已采纳，非采购数据）"
+    else:
+        trims = _fallback_trims(category_text)
+        trims_source = "按品类内置兜底（未生成辅料建议时使用，价格为粗略估）"
+
     trims_cost = 0.0
     trims_cost_high = 0.0
-    for trim in all_of("trims"):
-        if "price_yuan_per_m" in trim:
-            low_p, high_p = trim["price_yuan_per_m"]
-        else:
-            low_p, high_p = trim["price_yuan_per_pc"]
-        trims.append({"id": trim["id"], "name": trim["name"], "spec": trim["spec"], "price": [low_p, high_p]})
-        trims_cost += low_p
-        trims_cost_high += high_p
+    for trim in trims:
+        low_p, high_p = (trim.get("price") or [0, 0])[:2]
+        trims_cost += float(low_p)
+        trims_cost_high += float(high_p)
+
+    # 版型行的松量说明：AI 版型用它的 ease；示例库版型用库里的松量（不让服装显示"按基础版型"这种空话）
+    ease_for_line = dict(d.get("ease") or {})
+    if not ease_for_line and not is_shoe(category_text):
+        ease_for_line = {"腰围": pattern.get("waist_ease_cm"), "臀围": pattern.get("hip_ease_cm")}
 
     craft_fee = (8 if len(pattern_pick.crafts) >= 3 else 5) * len(pattern_pick.crafts)
     low_total = round(fabric_cost[0] + trims_cost + craft_fee)
     high_total = round(fabric_cost[1] + trims_cost_high + craft_fee)
     return {
         "material": {"id": material["id"], "name": material["name"], "fiber": material["fiber"],
-                     "is_sample": True},
+                     "is_sample": "AI-" not in str(material["id"]),
+                     "price_range": [low, high], "unit": "元/米"},
         "fabric_meters": fabric_meters,
+        "trims_source": trims_source,
+        "is_ai_generated": True,
         "items": [
-            {"kind": "版型", "name": pattern["name"], "qty": f"腰围松量 {pattern['waist_ease_cm']}cm",
-             "price_range": [0, 0], "subtotal": [0, 0]},
+            {"kind": "版型", "name": pattern["name"],
+             "qty": pattern_line(category_text, spec, {"ease": ease_for_line}),
+             "price_range": [0, 0], "subtotal": [0, 0], "no_cost": True},
             {"kind": "面料", "name": material["name"], "qty": f"{fabric_meters} 米",
              "price_range": [low, high], "subtotal": list(fabric_cost)},
-            *[{"kind": "辅料", "name": t["name"], "qty": t["spec"], "price_range": t["price"],
-               "subtotal": [t["price"][0] * 1, t["price"][1] * 1]} for t in trims],
+            *[{"kind": "辅料", "name": t["name"],
+               "qty": f'{t.get("spec", "")}｜{t.get("unit", "")}'.strip("｜"),
+               "use": t.get("use", ""),
+               "price_range": list(t.get("price") or [0, 0]),
+               "subtotal": list((t.get("price") or [0, 0])[:2]),
+               "source": trims_source} for t in trims],
             {"kind": "工艺", "name": f"{len(pattern_pick.crafts)} 道工艺", "qty": "按道计",
              "price_range": [craft_fee, craft_fee], "subtotal": [craft_fee, craft_fee]},
         ],

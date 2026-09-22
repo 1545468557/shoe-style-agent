@@ -6,7 +6,12 @@ export type Material = { id: string; name: string; fiber: string; weight_gsm: nu
 export type Pattern = { id: string; name: string; fit: string; waist_ease_cm: number; hip_ease_cm: number; length_options_cm: number[]; difficulty: string; tags: string[] };
 export type Craft = { id: string; name: string; note: string };
 export type State = { project: { id: number; name: string; status: string }; gates: Record<string, boolean>; brief: { parsed: Brief } | null; direction?: { id: number; name?: string } | null; directions?: Array<{ id: number }> | null; direction_id?: number | null; sampling?: { state: string } | null; iterations: { no: number; changes: Record<string, number> }[] };
-export type Bom = { items: { kind: string; name: string; qty: string; subtotal: number[] }[]; estimated_cost_yuan: number[]; note: string };
+export type Bom = { items: { kind: string; name: string; qty: string; subtotal: number[]; use?: string; source?: string }[]; estimated_cost_yuan: number[]; note: string; trims_source?: string; material?: { name?: string; fiber?: string } };
+
+/** 尺寸表：**部位名与单位由后端按品类给出**（鞋→鞋码/跖围；服装→胸腰臀/衣长），前端不再写死女装五部位。 */
+export type SizeRow = { key: string; label: string; value: string | number; unit?: string };
+export type SizeSpec = { system?: string; unit?: string; rows?: SizeRow[]; tiers?: Array<Record<string, string | number>>; iterations?: number; note?: string };
+export type TrimSuggestion = { seq: number; name: string; spec?: string; use?: string; unit?: string; price?: number[]; why?: string };
 
 /** 后端地址：开发期直连 8020（后端已放行 5180 跨域）。 */
 export const BACKEND = process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "http://127.0.0.1:8020";
@@ -57,7 +62,13 @@ export const api = {
   gatePattern: (id: number) => call<{ status: Record<string, boolean> }>(`/project/${id}/gate/pattern`, { method: "POST", body: "{}" }),
   iterate: (id: number, changes: Record<string, number>) =>
     call<{ iteration_no: number; effects: string[] }>(`/project/${id}/iterate`, { method: "POST", body: JSON.stringify({ changes }) }),
-  bom: (id: number) => call<{ bom: Bom; size_spec: Record<string, string | number> }>(`/project/${id}/bom`, { method: "POST", body: "{}" }),
+  bom: (id: number) => call<{ bom: Bom; size_spec: SizeSpec }>(`/project/${id}/bom`, { method: "POST", body: "{}" }),
+  generateTrims: (id: number) =>
+    call<{ items: TrimSuggestion[]; provider: string; note: string }>(`/project/${id}/trims/generate`, { method: "POST" }),
+  readTrims: (id: number) =>
+    call<{ items: TrimSuggestion[]; accepted: number[]; provider: string | null; note: string }>(`/project/${id}/trims/generate`),
+  acceptTrims: (id: number, seqs: number[]) =>
+    call<{ items: TrimSuggestion[]; note: string }>(`/project/${id}/trims/accept`, { method: "POST", body: JSON.stringify({ seqs }) }),
   exportAll: (id: number) => call<{ word: string; excel: string; download: { word: string; excel: string } }>(`/project/${id}/export`, { method: "POST", body: "{}" }),
   sampling: (id: number) => call<Record<string, unknown>>(`/project/${id}/sampling`, { method: "POST", body: "{}" }),
   approve: (id: number) => call<{ state: string }>(`/project/${id}/sampling/advance`, { method: "POST", body: JSON.stringify({ to_state: "approved" }) }),

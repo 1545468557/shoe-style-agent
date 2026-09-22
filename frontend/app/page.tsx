@@ -4,10 +4,26 @@
  *  口径：示例数据必须标注；AI 生成图必须标注"非实物照片"；成本标"估算值"；打样标"演示流程"。 */
 
 import { useCallback, useEffect, useState } from "react";
-import { api, mediaUrl, type Bom, type Craft, type Direction, type Material, type Pattern, type State } from "@/lib/api";
+import { api, mediaUrl, type Bom, type Craft, type Direction, type Material, type Pattern, type SizeRow, type SizeSpec, type State, type TrimSuggestion } from "@/lib/api";
 
 const STEP_LABELS = ["输入企划", "挑一个方向", "定面料与版型", "算用料与尺寸", "打样审批"];
 const GATE_LABELS: Record<string, string> = { brief: "企划", direction: "方向", material: "面料", pattern: "版型", sampling: "打样" };
+
+/** 兼容旧结构（只有 labels + bust/waist/…）：转成"按部位渲染"的行；值为 0 或缺的部位不渲染。 */
+function defaultRows(meta: Record<string, unknown>, isShoe: boolean, lenLabel: string): SizeRow[] {
+  const labels = (meta["labels"] && typeof meta["labels"] === "object" ? meta["labels"] : {}) as Record<string, string>;
+  const fallback: Record<string, string> = isShoe
+    ? { bust: "鞋码（＝脚长）", waist: "", hip: "跖围", skirt_length: "筒高", sleeve_length: "" }
+    : { bust: "胸围", waist: "腰围", hip: "臀围", skirt_length: lenLabel, sleeve_length: "袖长" };
+  const rows: SizeRow[] = [];
+  for (const key of ["bust", "waist", "hip", "skirt_length", "sleeve_length"]) {
+    const label = labels[key] || fallback[key];
+    const value = meta[key];
+    const empty = value === undefined || value === null || value === "" || Number(value) === 0;
+    if (label && !empty) rows.push({ key, label, value: value as string | number, unit: String(meta["unit"] ?? "cm") });
+  }
+  return rows;
+}
 
 export default function Page() {
   const [pid, setPid] = useState<number | null>(null);
@@ -19,7 +35,10 @@ export default function Page() {
   const [pats, setPats] = useState<{ items: Pattern[]; crafts: Craft[] } | null>(null);
   const [crafts, setCrafts] = useState<string[]>([]);
   const [craftNote, setCraftNote] = useState("");
-  const [bom, setBom] = useState<{ bom: Bom; size_spec: Record<string, string | number> } | null>(null);
+  const [bom, setBom] = useState<{ bom: Bom; size_spec: SizeSpec } | null>(null);
+  const [trims, setTrims] = useState<TrimSuggestion[]>([]);
+  const [trimSel, setTrimSel] = useState<number[]>([]);
+  const [trimNote, setTrimNote] = useState("");
   const [files, setFiles] = useState<{ word: string; excel: string } | null>(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
@@ -94,16 +113,30 @@ export default function Page() {
 
   const gates = st?.gates ?? {};
 
-  // 尺寸表标签按品类显示（鞋→鞋码/脚长/跖围/筒高；服装→胸围/腰围/臀围/衣长），由后端 labels 提供
-  const sizeMeta = (bom?.size_spec ?? {}) as Record<string, unknown>;
-  const sizeLabels = ((sizeMeta["labels"] && typeof sizeMeta["labels"] === "object")
-    ? sizeMeta["labels"] : {}) as Record<string, string>;
-  const sizeUnit = String(sizeMeta["unit"] ?? "cm");
-  const isShoe = sizeUnit === "mm";                        // 鞋/靴：mm 计量
-  const labelOf = (key: string, fallback: string) => sizeLabels[key] ?? fallback;
-  // maxStep＝流程真正推进到的那一步；step＝当前"在看"的那一步（view 可回看已完成的步骤）
+  // 尺寸表：**部位名与单位都由后端按品类给出**（鞋→鞋码/跖围；服装→胸腰臀/衣长），前端不写死女装部位。
+  // 品类判定也不依赖 bom（未算料时也要正确，否则凉鞋会显示"腰围松量"）。
+  const sizeMeta = (bom?.size_spec ?? {}) as SizeSpec & Record<string, unknown>;
+  const designCategory = String((design as { category?: string } | null)?.category ?? "");
+  const categoryText = `${st?.brief?.parsed?.category ?? ""} ${designCategory} ${String(sizeMeta["system"] ?? "")}`;
+  const isShoe = String(sizeMeta["unit"] ?? "") === "mm" || /鞋|靴|跟|凉|拖/.test(categoryText);
+  const isBoot = /靴/.test(categoryText);
+  const lenLabel = /裤/.test(categoryText) ? "裤长" : /裙/.test(categoryText) ? "裙长" : "衣长";
+  const sizeUnit = String(sizeMeta["unit"] ?? (isShoe ? "mm" : "cm"));
+  const sizeRows: SizeRow[] = (sizeMeta.rows && sizeMeta.rows.length ? sizeMeta.rows : defaultRows(sizeMeta, isShoe, lenLabel)) as SizeRow[];
+  const sizeTiers: Array<Record<string, string | number>> = sizeMeta.tiers ?? [];
   const maxStep = !gates.brief ? 0 : !gates.direction ? 1 : !gates.material || !gates.pattern ? 2 : 3;
   const step = Math.min(view ?? maxStep, maxStep);
+
+  // 辅料建议：进入「用料与尺寸」时读取已生成的（零费用，刷新回显）
+  useEffect(() => {
+    if (!pid || step < 3) return;
+    api.readTrims(pid)
+      .then((r) => {
+        setTrims(r.items);
+        setTrimSel(r.accepted.length ? r.accepted : r.items.map((i) => i.seq));
+      })
+      .catch(() => undefined);
+  }, [pid, step]);
 
   const GATE_LABELS_CN: Record<string, string> = { brief: "企划", direction: "方向", material: "面料", pattern: "版型", sampling: "打样" };
   const openDesigns = async () => {
@@ -501,6 +534,36 @@ export default function Page() {
           <h1>用料与尺寸</h1>
           <div className="grid2">
             <div>
+              <div className="label">辅料建议（AI 生成 · 非采购数据）</div>
+              <p className="tiny">按品类生成（鞋类→内里/鞋垫/大底；服装→里布/拉链/衬布），价格为估算值，非采购报价。</p>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                <button className="btn sm" disabled={!!busy} onClick={() => run("辅料生成中", async () => {
+                  const r = await api.generateTrims(pid);
+                  setTrims(r.items);
+                  setTrimSel(r.items.map(i => i.seq));
+                  setTrimNote(r.note);
+                  setMsg(`已生成 ${r.items.length} 条辅料建议，勾选后点「采纳」`);
+                })}>{trims.length ? "重新生成辅料建议" : "AI 生成辅料建议（约 ¥0.01）"}</button>
+                {trims.length > 0 && (
+                  <button className="btn sm primary" disabled={!!busy} onClick={() => run("采纳中", async () => {
+                    await api.acceptTrims(pid, trimSel);
+                    setBom(await api.bom(pid));
+                    setMsg("辅料已采纳，已重新计算用料与成本");
+                  })}>采纳选中（{trimSel.length}）</button>
+                )}
+              </div>
+              {trimNote && <p className="tiny">{trimNote}</p>}
+              {trims.length > 0 && (
+                <div className="card" style={{ padding: "12px 16px", marginBottom: 20 }}>
+                  {trims.map(t => (
+                    <label key={t.seq} className="spec" style={{ gridTemplateColumns: "auto 1fr", marginBottom: 7 }}>
+                      <input type="checkbox" checked={trimSel.includes(t.seq)} onChange={() => setTrimSel(prev => prev.includes(t.seq) ? prev.filter(s => s !== t.seq) : [...prev, t.seq])} />
+                      <span>{t.name}｜{t.spec}｜{t.use}｜{t.price?.[0]}~{t.price?.[1]} {t.unit}{t.why ? `｜${t.why}` : ""}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
               <div className="label">用料清单</div>
               <button className="btn sm" disabled={!!busy} onClick={() => run("算料中", async () => setBom(await api.bom(pid)))}>
                 {bom ? "重新计算" : "算用料与尺寸"}
@@ -510,10 +573,14 @@ export default function Page() {
                   <div className="card" style={{ padding: "14px 18px" }}>
                     {bom.bom.items.map(i => (
                       <div className="spec" key={`${i.kind}-${i.name}`} style={{ marginBottom: 7 }}>
-                        <span>{i.kind}｜{i.name}</span><span className="v">{i.qty} · {i.subtotal[0]}~{i.subtotal[1]} 元</span>
+                        <span>{i.kind}｜{i.name}</span>
+                        <span className="v">
+                          {i.qty} · {i.subtotal.some(v => v) ? `${i.subtotal[0]}~${i.subtotal[1]} 元` : "不计入成本"}
+                        </span>
                       </div>
                     ))}
                   </div>
+                  {bom.bom.trims_source && <p className="tiny">辅料来源：{bom.bom.trims_source}</p>}
                   <div className="deep">
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28 }}>
                       <div>
@@ -532,19 +599,41 @@ export default function Page() {
                   </div>
                   <div className="label" style={{ marginTop: 24 }}>尺寸表（{bom.size_spec.system}）</div>
                   <div className="spec">
-                    <span>{labelOf("bust", "胸围")}</span><span className="v">{bom.size_spec.bust} {sizeUnit}</span>
-                    <span>{labelOf("waist", "腰围")}</span><span className="v">{bom.size_spec.waist} {sizeUnit}</span>
-                    <span>{labelOf("hip", "臀围")}</span><span className="v">{bom.size_spec.hip} {sizeUnit}</span>
-                    <span>{labelOf("skirt_length", "裙长")}</span><span className="v">{bom.size_spec.skirt_length} {sizeUnit}</span>
+                    {sizeRows.map(r => (
+                      <span key={r.key} style={{ display: "contents" }}>
+                        <span>{r.label}</span><span className="v">{r.value} {r.unit ?? sizeUnit}</span>
+                      </span>
+                    ))}
                   </div>
+                  {sizeTiers.length > 0 && (
+                    <table className="tiny" style={{ width: "100%", marginTop: 10, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr>
+                          {Object.keys(sizeTiers[0]).map(k => (
+                            <th key={k} style={{ textAlign: k === "size" ? "left" : "right", padding: "4px 6px", borderBottom: "1px solid #ddd" }}>{k === "size" ? "尺码" : k}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sizeTiers.map((t, idx) => (
+                          <tr key={idx}>
+                            {Object.keys(sizeTiers[0]).map(k => (
+                              <td key={k} style={{ textAlign: k === "size" ? "left" : "right", padding: "4px 6px", borderBottom: "1px solid #f0f0f0" }}>{t[k]}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  <p className="tiny" style={{ marginTop: 8 }}>单位：{sizeUnit}；各档数值由代码按品类基准 + 版型参数计算，估算值，投产前请版师复核。</p>
                 </div>
               )}
             </div>
             <aside className="side">
               <div className="label">改版型</div>
               <div className="spec" style={{ gridTemplateColumns: "1fr auto" }}>
-                <span>{isShoe ? "筒高调整" : "长度调整"}</span><span><input type="number" value={change.skirt_length_cm} onChange={e => setChange({ ...change, skirt_length_cm: Number(e.target.value) })} /> cm</span>
-                <span>{isShoe ? "跖围调整" : "腰围松量"}</span><span><input type="number" value={change.waist_ease_cm} onChange={e => setChange({ ...change, waist_ease_cm: Number(e.target.value) })} /> cm</span>
+                <span>{isShoe ? (isBoot ? "筒高调整" : "鞋帮高调整") : "长度调整"}</span><span><input type="number" value={change.skirt_length_cm} onChange={e => setChange({ ...change, skirt_length_cm: Number(e.target.value) })} /> cm</span>
+                <span>{isShoe ? "跖围调整" : "腰围松量"}</span><span><input type="number" value={change.waist_ease_cm} onChange={e => setChange({ ...change, waist_ease_cm: Number(e.target.value) })} /> {isShoe ? "mm" : "cm"}</span>
               </div>
               <button className="btn sm" style={{ marginTop: 12 }} disabled={!!busy} onClick={() => run("改版中", async () => {
                 await api.iterate(pid, change);
@@ -554,7 +643,7 @@ export default function Page() {
               {st?.iterations?.length ? st.iterations.map(r => (
                 <div className="spec" key={r.no} style={{ gridTemplateColumns: "auto 1fr" }}>
                   <span>第 {r.no} 版</span>
-                  <span className="v">{Object.entries(r.changes).map(([k, v]) => `${k === "skirt_length_cm" ? (isShoe ? "筒高" : "裙长") : (isShoe ? "跖围" : "腰围松量")} ${v > 0 ? "+" : ""}${v}cm`).join("、")}</span>
+                  <span className="v">{Object.entries(r.changes).map(([k, v]) => `${k === "skirt_length_cm" ? (isShoe ? (isBoot ? "筒高" : "鞋帮高") : "长度") : (isShoe ? "跖围" : "腰围松量")} ${v > 0 ? "+" : ""}${v}${k === "waist_ease_cm" && isShoe ? "mm" : "cm"}`).join("、")}</span>
                 </div>
               )) : <p className="hint">还没改过版。</p>}
 

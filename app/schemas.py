@@ -217,3 +217,18 @@ class CraftGen(BaseModel):
 
 class CraftGenSet(BaseModel):
     crafts: list[CraftGen] = []
+
+
+class TrimGen(BaseModel):
+    """AI 生成的一条辅料/鞋材辅件建议（非真实采购数据）。"""
+
+    name: str = ""
+    spec: str = ""
+    use: str = ""
+    unit: str = ""                                  # 元/双、元/米、元/条、元/个
+    price: list[float] = []                         # 估算单价区间
+    why: str = ""
+
+
+class TrimGenSet(BaseModel):
+    items: list[TrimGen] = []

@@ -181,3 +181,26 @@ class CraftSuggestion(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     provider: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[str] = mapped_column(String(32), default="")
+
+
+class TrimSuggestion(Base):
+    """AI 生成的辅料/鞋材辅件建议（**非真实采购数据**，价格为估算）。"""
+
+    __tablename__ = "trim_suggestion"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id"))
+    seq: Mapped[int] = mapped_column(Integer, default=0)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    provider: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(32), default="")
+
+
+class TrimPick(Base):
+    """采纳的辅料清单（采纳后 BOM 用这份；未采纳时用**按品类的内置兜底**）。"""
+
+    __tablename__ = "trim_pick"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id"))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    note: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[str] = mapped_column(String(32), default="")
