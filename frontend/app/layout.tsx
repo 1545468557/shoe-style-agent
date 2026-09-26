@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "款式工场 · 鞋服智能设计",
-  description: "说清楚要做什么样的衣服，出三个方向、配面料与版型，算好用料与尺寸。",
+  description: "与设计助手共创鞋服款式，比较方向、生成和修改设计，选定成果。",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -14,7 +14,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="bar">
             <b>款式工场</b>
             <span>AI Design Studio</span>
-            <nav><a href="/#settings" style={{ color: "inherit" }}>设置</a></nav>
           </header>
           {children}
         </div>

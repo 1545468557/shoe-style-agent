@@ -61,7 +61,6 @@ def main() -> None:
     base = input(f"③ 服务地址（直接回车用默认 {DEFAULT_BASE}）：").strip() or DEFAULT_BASE
 
     text = ENV.read_text(encoding="utf-8") if ENV.exists() else ""
-    text = set_var(text, "IMAGE_PROVIDER", "ark")
     text = set_var(text, "IMAGE_API_KEY", key)
     text = set_var(text, "IMAGE_BASE_URL", base)
     if model:
@@ -71,7 +70,7 @@ def main() -> None:
 
     print("\n已写入 .env（只显示有没有、多长，不显示内容）：")
     for line in ENV.read_text(encoding="utf-8").splitlines():
-        if line.startswith(("IMAGE_", "MODEL_PROVIDER")):
+        if line.startswith("IMAGE_"):
             name, _, value = line.partition("=")
             value = re.sub(r"\s+#.*$", "", value).strip()
             print(f"  {name:18s} {'已填（' + str(len(value)) + ' 字符）' if value else '（空）'}")

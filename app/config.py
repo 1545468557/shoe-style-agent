@@ -24,33 +24,15 @@ def _load_env() -> None:
 class Config:
     def __init__(self) -> None:
         _load_env()
-        self.model_provider = os.environ.get("MODEL_PROVIDER", "mock")
-        self.model_api_key = os.environ.get("MODEL_API_KEY", "")
-        self.model_base_url = os.environ.get("MODEL_BASE_URL", "https://api.deepseek.com")
-        self.model_id = os.environ.get("MODEL_ID", "deepseek-chat")
-        self.image_provider = os.environ.get("IMAGE_PROVIDER", "placeholder")
         self.image_api_key = os.environ.get("IMAGE_API_KEY", "")
-        # 火山方舟（即梦底层模型 Seedream 系列）走 OpenAI 兼容接口
         self.image_base_url = os.environ.get("IMAGE_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
         self.image_model = os.environ.get("IMAGE_MODEL", "")
-        self.image_size = os.environ.get("IMAGE_SIZE", "2K")  # 方舟 seedream 要求 ≥3,686,400 像素
-        self.port = int(os.environ.get("APP_PORT", "8020"))
+        self.image_size = os.environ.get("IMAGE_SIZE", "2K")
         self.db_url = os.environ.get("DATABASE_URL", "sqlite:///data/app.sqlite3")
         self.assets_dir = Path(os.environ.get("ASSETS_DIR", "data/assets"))
         if not self.assets_dir.is_absolute():
             self.assets_dir = ROOT / self.assets_dir
         self.assets_dir.mkdir(parents=True, exist_ok=True)
-
-    @property
-    def is_mock_model(self) -> bool:
-        """没有 Key 或显式指定 mock → 走 mock 模型（不阻塞开发，只阻塞真实验收）。"""
-        return self.model_provider == "mock" or not self.model_api_key
-
-    @property
-    def is_placeholder_image(self) -> bool:
-        """出图是否为占位图（界面必须明示，不得冒充真图）。"""
-        return self.image_provider == "placeholder" or not self.image_api_key
-
 
 @lru_cache(maxsize=1)
 def get_config() -> Config:
