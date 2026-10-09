@@ -39,6 +39,8 @@ h1, h2, h3, .bar b {
 }
 .bar b { font-size: 17px; letter-spacing: .24em; }
 .bar span { font-size: 10.5px; letter-spacing: .44em; text-transform: uppercase; color: var(--faint); }
+.bar-link { margin-left:auto;color:var(--muted);text-decoration:none;font-size:13px;letter-spacing:0; }
+.bar-link:hover { color:var(--gold); }
 @media (max-width: 900px) {
   .bar { padding: 16px; gap: 12px; }
   .bar > span { display: none; }
