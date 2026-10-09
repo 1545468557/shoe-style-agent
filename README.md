@@ -30,6 +30,16 @@ npm run dev
 
 顶部“历史对话”可打开现有项目。旧 `/workbench` 地址会转到当前入口。
 
+## CMS 需求包连接（只读基础）
+
+在后端 `.env` 配置 `CMS_BASE_URL` 和 `CMS_DESIGN_API_KEY`（CMS 中绑定 `design` 身份的专用 Key），然后运行：
+
+```bash
+.venv/bin/python -m app.agent.cms_bridge
+```
+
+这只会列出 CMS 已批准的需求包编号与版本，不会自动创建设计项目或触发出图。设计负责人接收、分派、设计审核与回传的实施顺序见 [CMS 设计交接实施方案](docs/CMS设计交接实施方案.md)。密钥仅在后端使用，不要写入前端或提交到 Git。
+
 ## 代码与数据
 
 - `app/main.py`：项目创建、健康检查和 Agent 路由入口。
