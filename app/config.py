@@ -29,6 +29,8 @@ class Config:
         self.image_model = os.environ.get("IMAGE_MODEL", "")
         self.image_size = os.environ.get("IMAGE_SIZE", "2K")
         self.db_url = os.environ.get("DATABASE_URL", "sqlite:///data/app.sqlite3")
+        self.cms_base_url = os.environ.get("CMS_BASE_URL", "").rstrip("/")
+        self.cms_design_api_key = os.environ.get("CMS_DESIGN_API_KEY", "")
         self.assets_dir = Path(os.environ.get("ASSETS_DIR", "data/assets"))
         if not self.assets_dir.is_absolute():
             self.assets_dir = ROOT / self.assets_dir
