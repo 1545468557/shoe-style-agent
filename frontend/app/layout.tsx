@@ -14,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="bar">
             <b>款式工场</b>
             <span>AI Design Studio</span>
+            <a className="bar-link" href="/settings">设置</a>
           </header>
           {children}
         </div>

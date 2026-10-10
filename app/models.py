@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from sqlalchemy import String, create_engine
+from sqlalchemy import JSON, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .config import ROOT, get_config
@@ -27,6 +27,43 @@ class Project(Base):
     category: Mapped[str] = mapped_column(String(40), default="连衣裙")
     status: Mapped[str] = mapped_column(String(40), default="draft")
     created_at: Mapped[str] = mapped_column(String(32), default=_now)
+
+
+class DesignerUser(Base):
+    __tablename__ = "designer_user"
+    username: Mapped[str] = mapped_column(String(80), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    display_name: Mapped[str] = mapped_column(String(100))
+    role: Mapped[str] = mapped_column(String(20))  # manager / designer
+    active: Mapped[bool] = mapped_column(default=True)
+
+
+class DesignerSession(Base):
+    __tablename__ = "designer_session"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(ForeignKey("designer_user.username"))
+    expires_at: Mapped[int] = mapped_column(Integer)
+
+
+class DesignProjectAccess(Base):
+    __tablename__ = "design_project_access"
+    project_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(ForeignKey("designer_user.username"))
+
+
+class DesignHandoff(Base):
+    __tablename__ = "design_handoff"
+    id: Mapped[str] = mapped_column(String(220), primary_key=True)
+    package_id: Mapped[str] = mapped_column(String(160))
+    version: Mapped[str] = mapped_column(String(40))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(32), default="new")
+    assignee: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    submitted_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    manager_note: Mapped[str] = mapped_column(String(2000), default="")
+    image_token: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), default=_now)
 
 
 _engine = None

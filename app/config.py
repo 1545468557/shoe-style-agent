@@ -29,6 +29,12 @@ class Config:
         self.image_model = os.environ.get("IMAGE_MODEL", "")
         self.image_size = os.environ.get("IMAGE_SIZE", "2K")
         self.db_url = os.environ.get("DATABASE_URL", "sqlite:///data/app.sqlite3")
+        self.product_handoff_url = os.environ.get("PRODUCT_HANDOFF_URL", "http://127.0.0.1:3112").rstrip("/")
+        self.product_handoff_key = os.environ.get("PRODUCT_HANDOFF_KEY", "")
+        self.design_public_base_url = os.environ.get("DESIGN_PUBLIC_BASE_URL", "http://127.0.0.1:8020").rstrip("/")
+        self.design_auth_required = os.environ.get("DESIGN_AUTH_REQUIRED", "false").lower() == "true"
+        self.design_manager_username = os.environ.get("DESIGN_MANAGER_USERNAME", "")
+        self.design_manager_password_hash = os.environ.get("DESIGN_MANAGER_PASSWORD_HASH", "")
         self.assets_dir = Path(os.environ.get("ASSETS_DIR", "data/assets"))
         if not self.assets_dir.is_absolute():
             self.assets_dir = ROOT / self.assets_dir
